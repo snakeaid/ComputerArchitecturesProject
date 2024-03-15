@@ -3,6 +3,7 @@
 var lines = ReadLines();
 var averages = GetAveragesForKeys(lines);
 SortAveragesForKeys(averages);
+PrintKeys(averages);
 
 string[] ReadLines()
 {
@@ -53,4 +54,10 @@ void SortAveragesForKeys(KeyValue[] averages)
         for (var j = 0; j < length - i - 1; j++)
             if (averages[j].Value < averages[j + 1].Value)
                 (averages[j], averages[j + 1]) = (averages[j + 1], averages[j]);
+}
+
+void PrintKeys(KeyValue[] keyValues)
+{
+    foreach (var keyValue in keyValues)
+        Console.WriteLine(keyValue.Key);
 }
