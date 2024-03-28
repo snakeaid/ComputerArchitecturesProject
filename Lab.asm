@@ -73,3 +73,18 @@
     arrayCount dw LINE_SIZE DUP(0)
     ; Average values
     arrayAverage dw LINE_SIZE DUP(0)
+
+; Code segment
+.CODE
+
+    ; Go to entry point
+    jmp start
+
+
+; Entry point
+start:
+    ; Segments setup
+    mov ax, @data                   ; Get CS
+    mov ds, ax                      ; Make DS point to CODE segment
+    mov es, ax                      ; Make ES point to CODE segment
+    mov ss, ax                      ; Make SS point to CODE segment
