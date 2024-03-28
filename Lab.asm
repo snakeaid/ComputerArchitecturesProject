@@ -88,3 +88,19 @@ start:
     mov ds, ax                      ; Make DS point to CODE segment
     mov es, ax                      ; Make ES point to CODE segment
     mov ss, ax                      ; Make SS point to CODE segment
+
+; Input loop
+loop_read:
+    ; Read line
+    call line_read                  ; Do read line
+    ; Check EOF
+    cmp al, EOF                     ; EOF ?
+    je loop_read_exit               ; Done processing input
+    ; Update line count
+    inc countLines                  ; Increment lines count
+    ; Parse line
+    call line_parse                 ; Parse <key> <value>
+    ; Convert value
+    call decimal_convert            ; Convert value from dec to bin
+    ; Find key in table
+    xor bx, bx                      ; BX <-- 0
