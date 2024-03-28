@@ -286,7 +286,7 @@ line_read proc
     lea dx, dataLine                ; Line receive buffer
     mov si, dx                      ; Buffer address to SI
     xor bx, bx                      ; BX <-- 0
-    
+
 ; Read single char
 loop_read_char:
     ; DOS Read char
@@ -341,3 +341,267 @@ loop_print_char_exit:
     int 21h                         ; DOS interrupt
     ret                             ; Exit function
 line_print endp
+
+; Parse line function
+line_parse proc
+    ; Offset
+    xor bx, bx                      ; Reset line offset
+    ; Parse key
+    call key_parse                  ; Parse key
+    ; Parse value
+    call value_parse                ; Parse value
+    ; Exit
+    ret                             ; Exit function
+line_parse endp
+
+
+; Skip space
+skip_leading_spaces proc
+    cld                             ; Clear dir flag
+; Loop skip space
+loop_skip_space:
+    ; Get char
+    mov al, byte ptr ds:[si + bx]   ; Copy line char to AL
+    ; Check space
+    call is_space
+    cmp ah, TRUE                    ; Space ?
+    jne loop_skip_space_exit        ; Done
+    ; More spaces to eliminate
+    inc bx                          ; Next char
+    jmp loop_skip_space             ; Continue loop
+; Loop skip space exit
+loop_skip_space_exit:
+    ret                             ; Exit function
+skip_leading_spaces endp
+
+
+; Key parse
+key_parse proc
+    ; Received line data
+    lea dx, dataLine                ; Line buffer
+    mov si, dx                      ; Line buffer address to SI
+    ; Key storage
+    lea dx, dataKey                 ; Key storage buffer
+    mov di, dx                      ; Key storage buffer address to DI
+    ; Remove any spaces
+    call skip_leading_spaces        ; Skip spaces
+; Loop key parsing
+loop_key_parse:
+    ; Check new line
+    call is_new_line
+    cmp ah, TRUE                    ; New line ?
+    je loop_key_parse_exit          ; Done
+    ; Check space
+    call is_space
+    cmp ah, TRUE                    ; Space ?
+    je loop_key_parse_exit          ; Done
+    ; Check EOF
+    cmp al, EOF                     ; EOF ?
+    je loop_key_parse_exit          ; Done
+    ; Store key char
+    mov byte ptr ds:[di], al        ; Copy AL char to keys array
+    inc di
+    inc bx                          ; Next char
+    cmp bx, LINE_SIZE               ; Line end ?
+    jge loop_key_parse_exit         ; Done
+    ; Get char
+    mov al, byte ptr ds:[si + bx]   ; Copy line char to AL
+    jmp loop_key_parse              ; Continue loop
+; Loop key parsing exit
+loop_key_parse_exit:
+    ; Store EOL
+    mov byte ptr ds:[di], EOL       ; Store EOL to temp storage
+    ret                             ; Exit function
+key_parse endp
+
+; Value parse
+value_parse proc
+    ; Received line data
+    lea dx, dataLine                ; Line buffer
+    mov si, dx                      ; Line buffer address to SI
+    ; Value storage
+    lea dx, dataValue               ; Value storage buffer
+    mov di, dx                      ; Value storage buffer address to DI
+    ; Remove any spaces
+    call skip_leading_spaces        ; Skip spaces
+; Loop value parsing
+loop_value_parse:
+    ; Check new line
+    call is_new_line
+    cmp ah, TRUE                    ; New line ?
+    je loop_value_parse_exit        ; Done
+    ; Check space
+    call is_space
+    cmp ah, TRUE                    ; Space ?
+    je loop_value_parse_exit        ; Done
+    ; Check EOF
+    cmp al, EOF                     ; EOF ?
+    je loop_value_parse_exit        ; Done
+    ; Store value char
+    mov byte ptr ds:[di], al        ; Copy AL char to keys array
+    inc di
+    inc bx                          ; Next char
+    cmp bx, LINE_SIZE               ; Line end ?
+    jge loop_value_parse_exit       ; Done
+    ; Get char
+    mov al, byte ptr ds:[si + bx]   ; Copy line char to AL
+    jmp loop_value_parse            ; Continue loop
+; Loop value parsing exit
+loop_value_parse_exit:
+    ; Store EOL
+    mov byte ptr ds:[di], EOL       ; Store EOL to temp storage
+    ret                             ; Exit function
+value_parse endp
+
+; Convert decimal to binary
+decimal_convert proc
+    ; Sign
+    mov dataValueSign, FALSE        ; Forget sign
+    ; Offset
+    xor cx, cx                      ; Reset temporary value storage
+    xor bx, bx                      ; Reset value storage offset
+    ; Value storage
+    lea dx, dataValue               ; Value storage buffer
+    mov si, dx                      ; Value storage buffer address to SI
+    ; Remove any spaces
+    call skip_leading_spaces        ; Skip spaces
+
+; Loop decimal convert
+loop_decimal_convert:
+    ; Get char
+    movsx ax, byte ptr ds:[si + bx] ; Copy line char to AL
+    ; Sign check
+    cmp ax, '-'                     ; Negative ?
+    jne positive                    ; Positive
+    mov dataValueSign, TRUE         ; Remember sign
+
+; Positive sign
+positive:
+    ; Check range
+    cmp ax, '0'                     ; Lower bound OK ?
+    jl loop_decimal_convert_exit    ; Done
+    cmp ax, '9'                     ; Upper bound OK ?
+    jg loop_decimal_convert_exit    ; Done
+    sub ax, '0'                     ; Convert ASCII char to digit
+    imul cx, 10                     ; Multiply value storage by 10
+    add cx, ax                      ; Add digit
+    cmp cx, MIN_VALUE               ; Lower bound OK ?
+    jl loop_decimal_convert_error   ; Done
+    cmp cx, MAX_VALUE               ; Upper bound OK ?
+    jg loop_decimal_convert_error   ; Done
+    inc bx                          ; Next char
+    cmp bx, VALUE_SIZE              ; Line end ?
+    jge loop_value_parse_exit       ; Done
+    jmp loop_decimal_convert        ; Continue loop
+
+; Loop decimal convert error
+loop_decimal_convert_error:
+    mov cx, 0000h                   ; Clear value in case of error
+
+; Loop decimal convert exit
+loop_decimal_convert_exit:
+    ; Check negative
+    cmp dataValueSign, TRUE         ; Negative sign ?
+    jne decimal_convert_done
+    ; Two's compliment
+    not cx                          ; Invert value
+    add cx, 0001h                   ; Add 1
+
+; Convert done
+decimal_convert_done:
+    ; Store binary value
+    mov dataValueBin, cx            ; Store value
+    ret                             ; Exit function
+decimal_convert endp
+
+; Compare strings
+string_compare proc
+    ; Prepare
+    cld                             ; Clear dir flag
+
+; Loop compare character
+string_compare_char:
+    lodsb                           ; Load AL with next char from string 1
+    cmp [di], al                    ; Compare characters
+    jne string_compare_exit         ; Jump out of loop if they are not the same
+    inc di                          ; DI -> next character in string 2
+    cmp al, EOL                     ; EOL ?
+    jne string_compare_char         ; Continue loop
+    mov al, TRUE                    ; Strings are equal
+    ret                             ; Exit function
+
+; Loop compare character exit
+string_compare_exit:
+    mov al, FALSE                   ; Strings are not equal
+    ret                             ; Exit function
+string_compare endp
+
+; Sort
+bubble_sort proc
+    mov cx, word ptr countKeys      ; Array size
+    dec cx                          ; Decrement size
+
+; Loop outer
+outer:
+    push cx                         ; Remember CX on stack
+    lea si, arrayAverage            ; Array address
+
+; Loop inner
+inner:
+    mov ax, word ptr ds:[si]        ; Take element Nth
+    cmp ax, word ptr ds:[si + 2]    ; Compare with Nth + 2
+    jg next                         ; Next step if less
+    xchg word ptr ds:[si + 2], ax   ; Exchange elements
+    mov word ptr ds:[si], ax
+    ; Exchange keys
+    xor dx, dx                      ; DX <-- 0
+
+; Loop exchnage
+exchange:
+    ; Check keys
+    cmp dx, KEY_SIZE                ; Check size ?
+    jge exchange_exit               ; Done
+    ; Key 1
+    lea di, arrayKeys               ; DI <-- Key from array
+    mov bx, countKeys
+    sub bx, cx
+    shr bx, 01h
+    imul bx, KEY_SIZE
+    add bx, dx
+    mov al, byte ptr ds:[di + bx]   ; Take char
+    ; Key 2
+    lea di, arrayKeys               ; DI <-- Key from array
+    mov bx, countKeys
+    sub bx, cx
+    shr bx, 01h
+    inc bx
+    imul bx, KEY_SIZE
+    add bx, dx
+    ; Exchange bytes
+    xchg al, byte ptr ds:[di + bx]  ; Exchange chars
+    ; Key 1 again
+    lea di, arrayKeys               ; DI <-- Key from array
+    mov bx, countKeys
+    sub bx, cx
+    shr bx, 01h
+    imul bx, KEY_SIZE
+    add bx, dx
+    mov byte ptr ds:[di + bx], al   ; Store char
+    ; Continue exchange
+    inc dx                          ; Next char
+    jmp exchange                    ; Continue loop
+
+; Loop exchnage exit
+exchange_exit:
+
+; Next step
+next:
+    add si, 2                       ; CX <-- CX + 2
+    loop inner                      ; Continue loop
+    pop cx                          ; Restore CX from stack
+    loop outer                      ; Continue loop
+    ret                             ; Exit function
+bubble_sort endp
+
+; Program end
+END start
